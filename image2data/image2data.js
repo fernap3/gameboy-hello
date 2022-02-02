@@ -43,8 +43,6 @@ const uniqueIntensities = new Set(pixelIntensities);
 
 if (uniqueIntensities.size > 4)
 	throw new Error("Currently, there must be no more than four unique colors in the input PNG");
-console.log(uniqueIntensities)
-return;
 
 // for debugging just for now
 // colorMap.set("c0c0c0ff", 0);
@@ -59,15 +57,13 @@ return;
 
 
 const tiles = new Map();
-const tileMap = [...Array(18)].map(x=>Array(32).fill(0));
-
-tiles.set("00FF00FF00FF00FF00FF00FF00FF00FF", 0)
+const tileMap = [...Array(png.height / 8)].map(x=>Array(png.width / 8).fill(0));
 
 for (let y = 0; y < png.height; y += 8)
 {
 	for (let x = 0; x < png.width; x += 8)
 	{
-		const tileOffset = (y * png.width * 4) + (x * 4);
+		const tileOffset = (y * png.width) + x;
 		let currentTileHex = "";
 		
 		for (let ty = 0; ty < 8; ty++)
@@ -77,10 +73,8 @@ for (let y = 0; y < png.height; y += 8)
 
 			for (let tx = 0; tx < 8; tx++)
 			{
-				const pixelOffset = tileOffset + (ty * png.width * 4) + (tx * 4);
-				const [r, g, b, a] = grayScaleImageBytes.slice(pixelOffset, pixelOffset + 4);
-				const hexColor = r.toString(16) + g.toString(16) + b.toString(16) + a.toString(16);
-				const palateColor = colorMap.get(hexColor);
+				const pixelOffset = tileOffset + ty * png.width + tx;
+				const palateColor = pixelIntensities[pixelOffset];
 
 				tileRowByte1 |= ((palateColor >> 1) & 1) << (7 - tx);
 				tileRowByte2 |= (palateColor & 1) << (7 - tx);
@@ -95,8 +89,6 @@ for (let y = 0; y < png.height; y += 8)
 		tileMap[y / 8][x / 8] = tiles.get(currentTileHex);
 	}
 }
-
-// console.log(tileMap, tileMap[0][0])
 
 printTiles(tiles);
 printTileMap(tileMap);
@@ -143,20 +135,18 @@ function makeIntensityBuffer(imageBytes)
 	{
 		const [r, g, b, a] = png.data.slice(i, i + 4);
 		const intensity = rgbToIntensity(r, g, b);
-		intensitiesBuffer[i / 4] = intensity;
 		uniqueIntensities.add(intensity);
 	}
 
-	const intensityMap = [...uniqueIntensities]
-		//.sort((a, b) => a - b)
-		.map((value, i) => [value, i]);
+	const intensityMap = new Map(
+		[...uniqueIntensities]
+		.map((value, i) => [value, i])
+	);
 
-		console.log(intensityMap)
-
-	for (let i = 0; i < intensitiesBuffer.length; i++)
+	for (let i = 0; i < png.data.length; i += 4)
 	{
-		console.log("looking up:", intensitiesBuffer[i])
-		intensitiesBuffer[i] = intensityMap.find(e => e[0] === intensitiesBuffer[i])[1];
+		const [r, g, b, a] = png.data.slice(i, i + 4);
+		intensitiesBuffer[i / 4] = intensityMap.get(rgbToIntensity(r, g, b));
 	}
 
 	return intensitiesBuffer;
