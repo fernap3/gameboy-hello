@@ -1,2 +1,5 @@
 *.gb
 *.o
+*.sym
+out.txt
+**/*/node_modules/
