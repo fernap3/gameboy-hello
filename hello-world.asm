@@ -31,9 +31,6 @@ EntryPoint:
 	ld a, 0
 	ld [rNR52], a
 
-	ld a, %0000_0000 ; turn off all interrupts
-	ld [$FFFF], a
-
 	; Copy our DMACopy code to [VBlankInterruptHandler] since only $FF80-FFFE is accessible during DMA
 	ld bc, DMACopyEnd - DMACopy
 	ld hl, DMACopy
