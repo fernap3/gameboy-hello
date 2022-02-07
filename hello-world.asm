@@ -1,5 +1,25 @@
 INCLUDE "hardware.inc"
 
+SpriteBuffer equ $D000
+VBlankInterruptHandler equ $FF80
+
+; copy BC bytes from HL to DE (macro for the Z80 ldir instruction)
+macro LDIR
+push af
+LdirLoop:
+	ld a, [hli]
+	ld [de], a
+	inc de
+	dec bc
+	ld a, b
+	or c
+	jr nz, LdirLoop
+pop af
+endm
+
+SECTION "VBlankinterrupt", ROM0[$0040]
+	jp VBlankInterruptHandler
+
 SECTION "Header", ROM0[$100]
 
 	jp EntryPoint
@@ -10,6 +30,15 @@ EntryPoint:
 	; Shut down audio circuitry
 	ld a, 0
 	ld [rNR52], a
+
+	ld a, %0000_0000 ; turn off all interrupts
+	ld [$FFFF], a
+
+	; Copy our DMACopy code to [VBlankInterruptHandler] since only $FF80-FFFE is accessible during DMA
+	ld bc, DMACopyEnd - DMACopy
+	ld hl, DMACopy
+	ld de, VBlankInterruptHandler
+	LDIR
 
 	; Do not turn the LCD off outside of VBlank
 WaitVBlank:
@@ -25,37 +54,31 @@ WaitVBlank:
 	ld de, Tiles
 	ld hl, $9000
 	ld bc, TilesEnd - Tiles
-CopyTiles:
+CopyTilesToVRAM:
 	ld a, [de]
 	ld [hli], a
 	inc de
 	dec bc
 	ld a, b
 	or a, c
-	jp nz, CopyTiles
-
-	; Copy the tilemap
-	ld de, Tilemap
-	ld hl, $9800
-	ld bc, TilemapEnd - Tilemap
+	jp nz, CopyTilesToVRAM
 
 ld de, Sprites
-ld hl, $8000
+ld hl, _VRAM
 ld bc, SpritesEnd - Sprites
 
-CopySprites:
+CopySpritesToVRAM:
 	ld a, [de]
 	ld [hli], a
 	inc de
 	dec bc
 	ld a, b
 	or a, c
-	jp nz, CopySprites
+	jp nz, CopySpritesToVRAM
 
 
-DEF _OAMRAMEND EQU $FE9F
-ld de, _OAMRAM
-ld bc, _OAMRAMEND - _OAMRAM ; OAM RAM length
+ld de, SpriteBuffer
+ld bc, 40 ; 40 tiles in our buffer get copied to OAM RAM
 
 ZeroAllSprites:
 	ld a, 0
@@ -72,14 +95,12 @@ ZeroAllSprites:
 	jp nz, ZeroAllSprites
 
 PositionSprites:
-	ld a, 25
-	ld [_OAMRAM], a
-	ld a, 50
-	ld [_OAMRAM + 1], a
-	ld a, 0
-	ld [_OAMRAM + 2], a
-	ld a, 0
-	ld [_OAMRAM + 3], a
+	ld b, 50 ; x
+	ld c, 25 ; y
+	ld a, 0 ; source sprite number
+	ld e, 0 ; destination sprite number
+	ld h, 0 ; attributes
+	call SetSprite
 	
 	; Copy the tilemap
 	ld de, Tilemap
@@ -106,9 +127,15 @@ CopyTilemap:
 	ld a, %11_01_10_00
 	ld [rOBP0], a
 
+	ld a, %0000_0001 ; turn on vblank interrupt
+	ld [$FFFF], a
+	ei
+
 	
 	; ld b, 0
 	; ld hl, rSCX
+
+ld b, 50
 
 Done:
 ; 	ld a, [rLY]
@@ -118,16 +145,61 @@ Done:
 ; 	dec b
 ; 	ld [hl], b
 
-; 	ld a, 255
-; 	ld d, 10
-; Wait:
-; 	dec a
-; 	jp nz, Wait
-; 	dec d
-; 	jp nz, Wait
+	inc b ; x
+	ld c, 25 ; y
+	ld a, 0 ; source sprite number
+	ld e, 0 ; destination sprite number
+	ld h, 0 ; attributes
+	call SetSprite
 
-; 	ld a, 255
+	ld a, 255
+	ld d, 20
+Wait:
+	dec a
+	jp nz, Wait
+	dec d
+	jp nz, Wait
+
+	ld a, 255
 	jp Done
+
+; A=source sprite number
+; B=X, C=Y
+; E=dest sprite number
+; H=attributes
+SetSprite:
+	ld d, h
+	push af
+		rlca ; multiply the sprite number by 4 to get the byte offset into SpriteBuffer
+		rlca
+		push hl
+		push de
+			push hl
+				ld hl, SpriteBuffer ; The address of our virtual sprite buffer which we will DMA to video memory during vblank
+				ld l, a ; a is the byte offset from SpriteBuffer of the sprite data to copy
+				ld a, c ; write the y-coord
+				ld [hli], a
+				ld a, b ; write the x-coord
+				ld [hli], a
+				ld a, e ; write the sprite number
+				ld [hli], a
+			pop de
+			ld a, d ; write the sprite attributes
+			ld [hli], a
+		pop de
+		pop hl
+	pop af
+	ret
+
+DMACopy:
+	ld a, SpriteBuffer/256 ; top byte of source address
+	ld [rDMA], a ; start the DMA
+	ld a, $28 ; amount to wait
+DMACopyWait:
+	dec a
+	jr nz, DMACopyWait
+	reti
+DMACopyEnd:
 
 SECTION "Sprite data", ROM0
 
