@@ -135,12 +135,13 @@ CopyTilemap:
 ld b, 50
 
 Done:
-; 	ld a, [rLY]
-; 	cp 144
-; 	jp c, Done
+	ld a, %1110_1111 ; Indicate that we want to read the directional pad
+	ld [rP1], a
 
-; 	dec b
-; 	ld [hl], b
+	ld a, [rP1] ; Read the joypad state
+	bit 0, a
+
+	jp nz, Done
 
 	inc b ; x
 	ld c, 25 ; y
@@ -149,16 +150,21 @@ Done:
 	ld h, 0 ; attributes
 	call SetSprite
 
-	ld a, 255
-	ld d, 20
-Wait:
-	dec a
-	jp nz, Wait
-	dec d
-	jp nz, Wait
-
-	ld a, 255
 	jp Done
+
+; A=amount of time to wait
+Wait:
+	push af
+	push bc
+		ld b, 255
+		WaitLoop:
+		dec b
+		jp nz, WaitLoop
+		dec a
+		jp nz, WaitLoop
+	pop bc
+	pop af
+	ret
 
 ; A=source sprite number
 ; B=X, C=Y
